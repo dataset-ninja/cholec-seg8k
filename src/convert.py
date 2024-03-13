@@ -1,7 +1,10 @@
+import glob
 import os
 import shutil
 
+import numpy as np
 import supervisely as sly
+from dataset_tools.convert import unpack_if_archive
 from supervisely.io.fs import (
     file_exists,
     get_file_name,
@@ -11,7 +14,6 @@ from supervisely.io.fs import (
 from tqdm import tqdm
 
 import src.settings as s
-from dataset_tools.convert import unpack_if_archive
 
 
 def convert_and_upload_supervisely_project(
@@ -19,72 +21,107 @@ def convert_and_upload_supervisely_project(
 ) -> sly.ProjectInfo:
     # Possible structure for bbox case. Feel free to modify as you needs.
 
-    root_path = ""
-    images_folder = "images"
-    bboxes_folder = "labels"
+    dataset_path = "/home/alex/DATASETS/TODO/CholecSeg8k/archive"
     batch_size = 30
-    img_ext = ".png"
-    ann_ext = ".txt"
+    ds_name = "ds"
+
+    masks_suffix = "_color_mask.png"
+
+    def get_unique_colors(img):
+        unique_colors = []
+        img = img.astype(np.int32)
+        h, w = img.shape[:2]
+        colhash = img[:, :, 0] * 256 * 256 + img[:, :, 1] * 256 + img[:, :, 2]
+        unq, unq_inv, unq_cnt = np.unique(colhash, return_inverse=True, return_counts=True)
+        indxs = np.split(np.argsort(unq_inv), np.cumsum(unq_cnt[:-1]))
+        col2indx = {unq[i]: indxs[i][0] for i in range(len(unq))}
+        for col, indx in col2indx.items():
+            unique_colors.append((col // (256**2), (col // 256) % 256, col % 256))
+
+        return unique_colors
 
     def create_ann(image_path):
-        labels, img_tags, label_tags = [], [], []
+        labels = []
 
-        image_np = sly.imaging.image.read(image_path)[:, :, 0]
-        img_height = image_np.shape[0]
-        img_width = image_np.shape[1]
+        mask_path = image_path.replace("_endo.png", "_endo_color_mask.png")
 
-        file_name = get_file_name(image_path)
-        curr_anns_dirpath = ""
-        ann_path = os.path.join(curr_anns_dirpath, file_name + ann_ext)
+        video_id, seq_id = image_path.split("/")[-2].split("_")
 
-        if file_exists(ann_path):
-            with open(ann_path) as f:
-                content = f.read().split("\n")
-                for curr_data in content:
-                    if len(curr_data) != 0:
-                        curr_data = list(map(float, curr_data.split(" ")))
+        video = sly.Tag(video_meta, value=int(video_id[6:]))
+        seq = sly.Tag(seq_meta, value=int(seq_id))
 
-                        left = int((curr_data[1] - curr_data[3] / 2) * img_width)
-                        right = int((curr_data[1] + curr_data[3] / 2) * img_width)
-                        top = int((curr_data[2] - curr_data[4] / 2) * img_height)
-                        bottom = int((curr_data[2] + curr_data[4] / 2) * img_height)
+        mask_np = sly.imaging.image.read(mask_path)
+        img_height = mask_np.shape[0]
+        img_wight = mask_np.shape[1]
+        unique_colors = get_unique_colors(mask_np)
+        for color in unique_colors:
+            mask = np.all(mask_np == color, axis=2)
+            bitmap = sly.Bitmap(data=mask)
+            obj_class = color_to_obj_class.get(color)
+            if obj_class is None:
+                continue
+            label = sly.Label(bitmap, obj_class)
+            labels.append(label)
 
-                        rectangle = sly.Rectangle(top=top, left=left, bottom=bottom, right=right)
-
-                        for obj_class in obj_classes:
-                            if obj_class.name == idx2clsname[curr_data[0]]:
-                                curr_obj_class = obj_class
-                                break
-                        label = sly.Label(rectangle, curr_obj_class, label_tags)
-                        labels.append(label)
-
-        return sly.Annotation(img_size=(img_height, img_width), labels=labels, img_tags=img_tags)
-
-    class_names = ["class1", "class2", ...]
-    idx2clsname = {}
-    obj_classes = [sly.ObjClass(name, sly.Rectangle) for name in class_names]
+        return sly.Annotation(
+            img_size=(img_height, img_wight), labels=labels, img_tags=[video, seq]
+        )
 
     project = api.project.create(workspace_id, project_name, change_name_if_conflict=True)
-    meta = sly.ProjectMeta(obj_classes=obj_classes)
+
+    from supervisely.imaging.color import hex2rgb
+
+    class_to_color = {
+        "black background": (127, 127, 127),
+        "Abdominal Wall": (210, 140, 140),
+        "Liver": (255, 114, 114),
+        "Gastrointestinal Tract": (231, 70, 156),
+        "Fat": (186, 183, 75),
+        "Grasper": (170, 255, 0),
+        "Connective Tissue": (255, 85, 0),
+        "Blood": (255, 0, 0),
+        "Cystic Duct": (255, 255, 0),
+        "L-hook Electrocautery": (169, 255, 184),
+        "Gallbladder": (255, 160, 165),
+        "Hepatic Vein": (0, 50, 128),
+        "Liver Ligament": (111, 74, 0),
+    }
+
+    video_meta = sly.TagMeta("video id", sly.TagValueType.ANY_NUMBER)
+    seq_meta = sly.TagMeta("sequence", sly.TagValueType.ANY_NUMBER)
+
+    meta = sly.ProjectMeta(tag_metas=[video_meta, seq_meta])
+    color_to_obj_class = {}
+
+    for class_name, color in class_to_color.items():
+        obj_class = sly.ObjClass(class_name.lower(), sly.Bitmap, color=color)
+        color_to_obj_class[tuple(color)] = obj_class
+        meta = meta.add_obj_class(obj_class)
+
     api.project.update_meta(project.id, meta.to_json())
 
-    for ds_name in os.listdir(root_path):
-        dataset = api.dataset.create(project.id, ds_name, change_name_if_conflict=True)
-        dataset_path = os.path.join(root_path, ds_name)
+    dataset = api.dataset.create(project.id, ds_name, change_name_if_conflict=True)
 
-        images_pathes = sly.fs.list_files_recursively(dataset_path, valid_extensions=[img_ext])
+    images_pathes = [
+        im_path
+        for im_path in glob.glob(dataset_path + "/*/*/*.png")
+        if get_file_name_with_ext(im_path)[-8:] == "endo.png"
+    ]
 
-        pbar = tqdm(desc=f"Create dataset '{ds_name}'", total=len(images_pathes))
-        for images_pathes_batch in sly.batched(images_pathes, batch_size=batch_size):
-            images_names_batch = [
-                get_file_name_with_ext(image_path) for image_path in images_pathes_batch
-            ]
+    progress = sly.Progress("Create dataset {}".format(ds_name), len(images_pathes))
 
-            img_infos = api.image.upload_paths(dataset.id, images_names_batch, images_pathes_batch)
-            img_ids = [image.id for image in img_infos]
+    for img_pathes_batch in sly.batched(images_pathes, batch_size=batch_size):
+        img_names_batch = [
+            im_path.split("/")[-3] + "_" + get_file_name_with_ext(im_path)
+            for im_path in img_pathes_batch
+        ]
 
-            anns = [create_ann(image_path) for image_path in images_pathes_batch]
-            api.annotation.upload_anns(img_ids, anns)
+        img_infos = api.image.upload_paths(dataset.id, img_names_batch, img_pathes_batch)
+        img_ids = [im_info.id for im_info in img_infos]
 
-            pbar.update(len(images_names_batch))
+        anns = [create_ann(image_path) for image_path in img_pathes_batch]
+        api.annotation.upload_anns(img_ids, anns)
+
+        progress.iters_done_report(len(img_names_batch))
+
     return project
