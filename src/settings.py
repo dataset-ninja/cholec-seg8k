@@ -15,9 +15,9 @@ from dataset_tools.templates import (
 ##################################
 PROJECT_NAME: str = "CholecSeg8k"
 PROJECT_NAME_FULL: str = (
-    "CholecSeg8k: A Semantic Segmentation Dataset for Laparoscopic Cholecystectomy"
+    "CholecSeg8k: A Semantic Segmentation Dataset for Laparoscopic Cholecystectomy Based on Cholec80"
 )
-HIDE_DATASET = True  # set False when 100% sure about repo quality
+HIDE_DATASET = False  # set False when 100% sure about repo quality
 
 ##################################
 # * After uploading to instance ##
@@ -26,7 +26,7 @@ LICENSE: License = License.CC_BY_NC_SA_4_0()
 APPLICATIONS: List[Union[Industry, Domain, Research]] = [Industry.Medical()]
 CATEGORY: Category = Category.Medical(sensitive_content=True)
 
-CV_TASKS: List[CVTask] = [CVTask.SemanticSegmentation(), CVTask.ObjectDetection()]
+CV_TASKS: List[CVTask] = [CVTask.SemanticSegmentation()]
 ANNOTATION_TYPES: List[AnnotationType] = [AnnotationType.SemanticSegmentation()]
 
 RELEASE_DATE: Optional[str] = "2020-12-23"  # e.g. "YYYY-MM-DD"

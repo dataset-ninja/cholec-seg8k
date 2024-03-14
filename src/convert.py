@@ -72,7 +72,7 @@ def convert_and_upload_supervisely_project(
     from supervisely.imaging.color import hex2rgb
 
     class_to_color = {
-        "black background": (127, 127, 127),
+        "black background": (0, 0, 0),
         "Abdominal Wall": (210, 140, 140),
         "Liver": (255, 114, 114),
         "Gastrointestinal Tract": (231, 70, 156),
