@@ -1,6 +1,6 @@
 Dataset **CholecSeg8k** can be downloaded in [Supervisely format](https://developer.supervisely.com/api-references/supervisely-annotation-json-format):
 
- [Download](Set 'HIDE_DATASET=False' to generate download link)
+ [Download](https://assets.supervisely.com/supervisely-supervisely-assets-public/teams_storage/o/g/hb/T3TFPWjLh2h8JOAB9WjVIakAdtixLpLxNEyj8w8A3gxT8WBpaT7u1i2FukGMHFBTypxowA958SO3vxq1CWxyhBIpGBGMbzNd5eWYUiMuSu6pqgGrXser8nwzwvAz.tar)
 
 As an alternative, it can be downloaded with *dataset-tools* package:
 ``` bash
